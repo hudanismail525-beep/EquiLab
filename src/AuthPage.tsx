@@ -234,7 +234,10 @@ function AuthPage({ mode, onAuthenticated }: AuthPageProps) {
 
             {firebaseConfigError && (
               <p className="auth-message auth-message-error" role="alert">
-                {firebaseConfigError} Lengkapi variabel Firebase di `.env.local`, lalu jalankan ulang aplikasi.
+                {firebaseConfigError}{' '}
+                {import.meta.env.PROD
+                  ? 'Build Cloudflare yang sedang tayang tidak memuat variabel ini. Pastikan variabel VITE_FIREBASE_* tersedia saat build untuk Production (variabel runtime Worker saja tidak cukup), lalu jalankan build dan deploy baru.'
+                  : 'Lengkapi variabel Firebase di `.env.local`, lalu jalankan ulang aplikasi.'}
               </p>
             )}
             {errorMessage && <p className="auth-message auth-message-error" role="alert">{errorMessage}</p>}
