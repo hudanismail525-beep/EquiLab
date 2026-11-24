@@ -1,4 +1,8 @@
 import { useEffect, useState } from 'react'
+import { onAuthStateChanged, signOut, type User } from '@firebase/auth'
+import AuthPage from './AuthPage'
+import { firebaseAuth, firebaseConfigError } from './firebase'
+import Module2Page from './Module2Page'
 import './App.css'
 
 const learningSections = [
@@ -107,8 +111,9 @@ const learningSections = [
 const futureModules = [
   {
     number: '02',
-    title: 'Hukum kesetimbangan dan Kc',
-    detail: 'Hukum aksi massa, ekspresi Kc, dan tabel M-R-S.',
+    title: 'Tetapan Kesetimbangan (Kc dan Kp)',
+    detail: 'Ekspresi dan perhitungan Kc/Kp, hubungan Kc dan Kp, serta makna nilai K.',
+    href: '#modul-2',
   },
   {
     number: '03',
@@ -124,6 +129,8 @@ const futureModules = [
 
 const pretestQuestions = [
   {
+    id: 'pretest-01',
+    questionVersion: 'v1',
     question: 'Berikut ini adalah ciri-ciri terjadinya reaksi kesetimbangan, kecuali ... .',
     options: [
       'reaksi reversibel',
@@ -137,6 +144,8 @@ const pretestQuestions = [
       'Kesetimbangan terjadi pada reaksi reversibel (bolak-balik), bukan reaksi yang tidak dapat balik.',
   },
   {
+    id: 'pretest-02',
+    questionVersion: 'v1',
     question: 'Di bawah ini adalah contoh peristiwa alam yang menggunakan prinsip kesetimbangan, kecuali ... .',
     options: [
       'siklus air',
@@ -150,6 +159,8 @@ const pretestQuestions = [
       'Siklus air, oksigen, nitrogen, dan karbon merupakan siklus alam. Peredaran darah adalah sistem biologis, bukan siklus kesetimbangan kimia yang dimaksud.',
   },
   {
+    id: 'pretest-03',
+    questionVersion: 'v1',
     question: 'Berikut ini faktor-faktor yang memengaruhi pergeseran kesetimbangan, kecuali ... .',
     options: ['konsentrasi', 'katalisator', 'suhu', 'tekanan', 'volume'],
     answer: 1,
@@ -157,6 +168,8 @@ const pretestQuestions = [
       'Katalis mempercepat tercapainya kesetimbangan, tetapi tidak menggeser posisi kesetimbangan.',
   },
   {
+    id: 'pretest-04',
+    questionVersion: 'v1',
     question:
       'Bila dalam kesetimbangan dilakukan aksi, sistem akan mengadakan reaksi dengan mengurangi pengaruh aksi tersebut. Pernyataan tersebut dikemukakan oleh ... .',
     options: [
@@ -171,6 +184,8 @@ const pretestQuestions = [
       'Pernyataan tersebut dikenal sebagai asas Le Chatelier, yang menjelaskan respons sistem kesetimbangan terhadap gangguan.',
   },
   {
+    id: 'pretest-05',
+    questionVersion: 'v1',
     question:
       'Suatu reaksi kesetimbangan 2CO(g) + O₂(g) ⇌ 2CO₂(g), ΔH = −x kJ/mol. Agar kesetimbangan bergeser ke kanan, hal-hal berikut dapat dilakukan, kecuali ... .',
     options: [
@@ -187,14 +202,42 @@ const pretestQuestions = [
 ]
 
 function App() {
+  const [authUser, setAuthUser] = useState<User | null>(null)
+  const [authLoading, setAuthLoading] = useState(firebaseAuth !== null)
+  const [authStatusError, setAuthStatusError] = useState('')
+  const [logoutError, setLogoutError] = useState('')
+  const [logoutLoading, setLogoutLoading] = useState(false)
   const [currentSlideIndex, setCurrentSlideIndex] = useState(() =>
     getSlideIndex(window.location.hash),
   )
   const [currentPage, setCurrentPage] = useState(() =>
     getPageType(window.location.hash),
   )
-  const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number>>({})
+  const [pretestAnswers, setPretestAnswers] = useState<
+    Record<string, { answer: number; questionVersion: string }>
+  >({})
+  const [activePretestIndex, setActivePretestIndex] = useState(0)
+  const [isPretestAnswerChecked, setIsPretestAnswerChecked] = useState(false)
   const [pretestSubmitted, setPretestSubmitted] = useState(false)
+
+  useEffect(() => {
+    if (!firebaseAuth) return
+
+    return onAuthStateChanged(
+      firebaseAuth,
+      (user) => {
+        setAuthUser(user)
+        setAuthLoading(false)
+        if (user && ['#login', '#register', '#forgot-password'].includes(window.location.hash)) {
+          window.location.hash = '#beranda'
+        }
+      },
+      (error) => {
+        setAuthStatusError(`Tidak dapat memeriksa sesi Firebase: ${error.message}`)
+        setAuthLoading(false)
+      },
+    )
+  }, [])
 
   useEffect(() => {
     function syncPageWithHash() {
@@ -217,6 +260,55 @@ function App() {
   const currentSlide = currentSlideIndex >= 0 ? slides[currentSlideIndex] : null
   const currentSection = currentSlide?.section ?? null
 
+  async function handleSignOut() {
+    if (!firebaseAuth) {
+      setLogoutError(firebaseConfigError ?? 'Firebase belum siap dikonfigurasi.')
+      return
+    }
+
+    setLogoutLoading(true)
+    setLogoutError('')
+    try {
+      await signOut(firebaseAuth)
+      window.location.hash = '#login'
+    } catch (error) {
+      setLogoutError(
+        error instanceof Error
+          ? `Tidak dapat keluar dari akun: ${error.message}`
+          : 'Tidak dapat keluar dari akun. Silakan coba lagi.',
+      )
+    } finally {
+      setLogoutLoading(false)
+    }
+  }
+
+  if (authLoading) {
+    return (
+      <main className="auth-loading" role="status">
+        <span className="auth-loading-mark" aria-hidden="true">⇌</span>
+        <p>Memeriksa sesi belajar...</p>
+      </main>
+    )
+  }
+
+  if (authStatusError) {
+    return (
+      <main className="auth-loading" role="alert">
+        <span className="auth-loading-mark" aria-hidden="true">!</span>
+        <p>{authStatusError}</p>
+      </main>
+    )
+  }
+
+  if (!authUser) {
+    return (
+      <AuthPage
+        mode={getAuthPageMode(window.location.hash) ?? 'login'}
+        onAuthenticated={() => { window.location.hash = '#beranda' }}
+      />
+    )
+  }
+
   return (
     <div className="app-shell" id="beranda">
       <header className="topbar">
@@ -235,9 +327,16 @@ function App() {
               <a className="nav-link" href="#rencana-belajar">Rencana belajar</a>
             </>
           )}
+          <a className={`nav-link${currentPage === 'module2' ? ' active' : ''}`} href="#modul-2">Modul 2</a>
         </nav>
-        <span className="course-label">KIMIA · FASE F</span>
+        <div className="auth-user-actions">
+          <span className="auth-user-email" title={authUser.email ?? undefined}>{authUser.email}</span>
+          <button className="auth-logout" type="button" onClick={handleSignOut} disabled={logoutLoading}>
+            {logoutLoading ? 'Keluar...' : 'Keluar'}
+          </button>
+        </div>
       </header>
+      {logoutError && <p className="auth-message auth-message-error auth-session-error" role="alert">{logoutError}</p>}
 
       {currentSlide ? (
         <main className="lesson-page" aria-labelledby="lesson-title">
@@ -289,6 +388,8 @@ function App() {
             )}
           </nav>
         </main>
+      ) : currentPage === 'module2' ? (
+        <Module2Page />
       ) : currentPage === 'sections' ? (
         <main className="section-menu-page" id="bagian-belajar">
           <div className="page-heading">
@@ -315,15 +416,23 @@ function App() {
             <a className="back-link" href="#beranda"><span aria-hidden="true">←</span> Beranda</a>
             <div className="section-kicker">PETA BELAJAR <span className="kicker-line" /></div>
             <h1>Rencana materi <span>selanjutnya</span></h1>
-            <p>Materi berikutnya akan dibuka bertahap setelah siap dipelajari.</p>
+            <p>Pilih modul yang tersedia untuk mulai belajar. Modul lainnya akan dibuka bertahap.</p>
           </div>
           <div className="roadmap-grid">
             {futureModules.map((module) => (
-              <article className="roadmap-card" key={module.number} aria-label={`${module.title}, belum tersedia`}>
-                <div className="roadmap-card-top"><span className="roadmap-number">{module.number}</span><span className="availability unavailable">BELUM TERSEDIA</span></div>
-                <h2>{module.title}</h2>
-                <p>{module.detail}</p>
-              </article>
+              module.href ? (
+                <a className="roadmap-card roadmap-card-link" href={module.href} key={module.number}>
+                  <div className="roadmap-card-top"><span className="roadmap-number">{module.number}</span><span className="availability available"><i aria-hidden="true" /> SIAP DIPELAJARI</span></div>
+                  <h2>{module.title}</h2>
+                  <p>{module.detail}</p>
+                </a>
+              ) : (
+                <article className="roadmap-card" key={module.number} aria-label={`${module.title}, belum tersedia`}>
+                  <div className="roadmap-card-top"><span className="roadmap-number">{module.number}</span><span className="availability unavailable">BELUM TERSEDIA</span></div>
+                  <h2>{module.title}</h2>
+                  <p>{module.detail}</p>
+                </article>
+              )
             ))}
           </div>
         </main>
@@ -333,65 +442,150 @@ function App() {
             <a className="back-link" href="#beranda"><span aria-hidden="true">←</span> Beranda</a>
             <div className="section-kicker">CEK PEMAHAMAN AWAL <span className="kicker-line" /></div>
             <h1>Pretest <span>Kesetimbangan Kimia</span></h1>
-            <p>Jawab lima soal berikut untuk memetakan pemahaman awalmu. Hasil hanya ditampilkan di halaman ini.</p>
+            <p>Jawab satu per satu untuk memetakan pemahaman awalmu.</p>
           </div>
 
           {pretestSubmitted && (
-            <div className="pretest-result" role="status">
-              <div><b>Hasil pretest</b><span>{pretestQuestions.filter((question, index) => selectedAnswers[index] === question.answer).length} dari {pretestQuestions.length} jawaban benar</span></div>
-              <button type="button" className="reset-pretest" onClick={() => { setSelectedAnswers({}); setPretestSubmitted(false) }}>Ulangi pretest</button>
-            </div>
+            <section className="pretest-result" aria-labelledby="pretest-result-title">
+              <div className="pretest-result-summary" role="status">
+                <b id="pretest-result-title">Hasil pretest</b>
+                <span>
+                  {pretestQuestions.filter((question) => pretestAnswers[question.id]?.answer === question.answer).length}
+                  {' '}dari {pretestQuestions.length} jawaban benar
+                </span>
+              </div>
+              <button
+                type="button"
+                className="button button-primary reset-pretest"
+                onClick={() => {
+                  setPretestAnswers({})
+                  setActivePretestIndex(0)
+                  setIsPretestAnswerChecked(false)
+                  setPretestSubmitted(false)
+                }}
+              >
+                Ulangi
+              </button>
+            </section>
           )}
 
-          <div className="pretest-questions">
-            {pretestQuestions.map((question, questionIndex) => (
-              <fieldset className="pretest-question" key={question.question}>
-                <legend><span className="question-number">{questionIndex + 1}</span><span>{question.question}</span></legend>
-                <div className="answer-options">
-                  {question.options.map((option, optionIndex) => {
-                    const isCorrect = optionIndex === question.answer
-                    const isSelected = selectedAnswers[questionIndex] === optionIndex
-                    const answerClass = pretestSubmitted
-                      ? isCorrect
-                        ? ' answer-correct'
-                        : isSelected
-                          ? ' answer-incorrect'
-                          : ''
-                      : isSelected
-                        ? ' answer-selected'
-                        : ''
+          {pretestSubmitted ? (
+            <section className="pretest-review" aria-label="Rangkuman jawaban dan pembahasan">
+              {pretestQuestions.map((question, questionIndex) => {
+                const studentAnswer = pretestAnswers[question.id]?.answer
+                const isCorrect = studentAnswer === question.answer
+                const studentAnswerText = studentAnswer === undefined
+                  ? 'Belum dijawab'
+                  : `${String.fromCharCode(65 + studentAnswer)}. ${question.options[studentAnswer]}`
 
-                    return (
-                      <button
-                        className={`answer-option${answerClass}`}
-                        key={option}
-                        type="button"
-                        aria-pressed={isSelected}
-                        disabled={pretestSubmitted}
-                        onClick={() => setSelectedAnswers((answers) => ({ ...answers, [questionIndex]: optionIndex }))}
-                      >
-                        <span className="option-letter">{String.fromCharCode(65 + optionIndex)}</span>
-                        <span>{option}</span>
-                        {pretestSubmitted && isCorrect && <span className="correct-label">Jawaban benar</span>}
-                        {pretestSubmitted && isSelected && !isCorrect && <span className="incorrect-label">Pilihanmu</span>}
-                      </button>
-                    )
-                  })}
-                </div>
-                {pretestSubmitted && <p className="answer-explanation">{question.explanation}</p>}
-              </fieldset>
-            ))}
-          </div>
+                return (
+                  <article
+                    className="pretest-review-question"
+                    data-question-version={question.questionVersion}
+                    key={question.id}
+                  >
+                    <div className="pretest-review-heading">
+                      <span className="question-number">{questionIndex + 1}</span>
+                      <span className={`pretest-status ${isCorrect ? 'pretest-status-correct' : 'pretest-status-incorrect'}`}>
+                        {isCorrect ? 'Benar' : 'Belum tepat'}
+                      </span>
+                    </div>
+                    <h2>{question.question}</h2>
+                    <dl className="pretest-review-answers">
+                      <div>
+                        <dt>Jawabanmu</dt>
+                        <dd>{studentAnswerText}</dd>
+                      </div>
+                      <div>
+                        <dt>Jawaban benar</dt>
+                        <dd>{String.fromCharCode(65 + question.answer)}. {question.options[question.answer]}</dd>
+                      </div>
+                    </dl>
+                    <p className="answer-explanation"><b>Pembahasan</b>{question.explanation}</p>
+                  </article>
+                )
+              })}
+            </section>
+          ) : (
+            <section className="pretest-questions" aria-label="Soal pretest">
+              {pretestQuestions[activePretestIndex] && (() => {
+                const question = pretestQuestions[activePretestIndex]
+                const selectedAnswer = pretestAnswers[question.id]?.answer
+                const isCorrect = selectedAnswer === question.answer
 
-          {!pretestSubmitted && (
-            <button
-              className="button button-primary submit-pretest"
-              type="button"
-              disabled={Object.keys(selectedAnswers).length !== pretestQuestions.length}
-              onClick={() => setPretestSubmitted(true)}
-            >
-              Periksa Jawaban <span aria-hidden="true">→</span>
-            </button>
+                return (
+                  <fieldset
+                    className="pretest-question"
+                    data-question-version={question.questionVersion}
+                    disabled={isPretestAnswerChecked}
+                    key={question.id}
+                  >
+                    <legend>
+                      <span className="question-progress">Soal {activePretestIndex + 1} dari {pretestQuestions.length}</span>
+                      <span>{question.question}</span>
+                    </legend>
+                    <div className="answer-options">
+                      {question.options.map((option, optionIndex) => (
+                        <label className="answer-option" key={option}>
+                          <input
+                            className="answer-radio"
+                            type="radio"
+                            name={`answer-${question.id}`}
+                            value={optionIndex}
+                            checked={selectedAnswer === optionIndex}
+                            onChange={() => setPretestAnswers((answers) => ({
+                              ...answers,
+                              [question.id]: {
+                                answer: optionIndex,
+                                questionVersion: question.questionVersion,
+                              },
+                            }))}
+                          />
+                          <span className="option-letter" aria-hidden="true">{String.fromCharCode(65 + optionIndex)}</span>
+                          <span className="answer-option-text">{option}</span>
+                        </label>
+                      ))}
+                    </div>
+
+                    {isPretestAnswerChecked && selectedAnswer !== undefined && (
+                      <div className={`pretest-feedback ${isCorrect ? 'pretest-feedback-correct' : 'pretest-feedback-incorrect'}`} role="status" aria-live="polite">
+                        <b>{isCorrect ? 'Benar' : 'Belum tepat'}</b>
+                        <p><strong>Jawabanmu:</strong> {String.fromCharCode(65 + selectedAnswer)}. {question.options[selectedAnswer]}</p>
+                        <p><strong>Jawaban benar:</strong> {String.fromCharCode(65 + question.answer)}. {question.options[question.answer]}</p>
+                        <p className="answer-explanation"><strong>Pembahasan:</strong> {question.explanation}</p>
+                      </div>
+                    )}
+                  </fieldset>
+                )
+              })()}
+
+              {!isPretestAnswerChecked ? (
+                <button
+                  className="button button-primary submit-pretest"
+                  type="button"
+                  disabled={pretestAnswers[pretestQuestions[activePretestIndex].id] === undefined}
+                  onClick={() => setIsPretestAnswerChecked(true)}
+                >
+                  Periksa jawaban <span aria-hidden="true">→</span>
+                </button>
+              ) : (
+                <button
+                  className="button button-primary submit-pretest"
+                  type="button"
+                  onClick={() => {
+                    if (activePretestIndex === pretestQuestions.length - 1) {
+                      setPretestSubmitted(true)
+                    } else {
+                      setActivePretestIndex((index) => index + 1)
+                      setIsPretestAnswerChecked(false)
+                    }
+                  }}
+                >
+                  {activePretestIndex === pretestQuestions.length - 1 ? 'Lihat hasil' : 'Soal berikutnya'}
+                  <span aria-hidden="true">→</span>
+                </button>
+              )}
+            </section>
           )}
         </main>
       ) : (
@@ -418,7 +612,9 @@ function App() {
               <span className="sheet-index">01 / 04</span>
             </div>
             <div className="sheet-equation" aria-label="N dua gas ditambah tiga H dua gas setimbang dengan dua NH tiga gas">
-              N<sub>2</sub>(g) + 3H<sub>2</sub>(g) <span>⇌</span> 2NH<sub>3</sub>(g)
+              <span>
+                N<sub>2</sub>(g) + 3H<sub>2</sub>(g) <span className="equation-arrow">⇌</span> 2NH<sub>3</sub>(g)
+              </span>
             </div>
             <div className="sheet-divider" />
             <div className="mol-note">
@@ -459,6 +655,22 @@ function App() {
             </div>
           </article>
 
+          <article className="module-card module2-home-card">
+            <div className="module-number" aria-hidden="true">02</div>
+            <div className="module-content">
+              <div className="module-meta"><span>MODUL 2</span><span className="meta-separator">·</span><span>TETAPAN KESETIMBANGAN</span></div>
+              <h3>Tetapan Kesetimbangan (Kc dan Kp)</h3>
+              <p>
+                Menuliskan dan menghitung Kc dan Kp, menghubungkan Kc dan Kp, serta menafsirkan nilai K.
+              </p>
+              <a className="button button-module" href="#modul-2">Mulai Belajar <span aria-hidden="true">→</span></a>
+            </div>
+            <div className="module-equation" aria-label="Kp sama dengan Kc dikali RT pangkat delta n">
+              <span>Kp = Kc (RT)<sup>Δn</sup></span>
+              <small>TETAPAN KESETIMBANGAN</small>
+            </div>
+          </article>
+
         </section>
       </main>
       )}
@@ -484,11 +696,19 @@ function getSlideHref(slide: { section: (typeof learningSections)[number]; point
   return `#materi/${slide.section.slug}/${slide.pointIndex + 1}`
 }
 
-function getPageType(hash: string): 'home' | 'sections' | 'roadmap' | 'pretest' {
+function getPageType(hash: string): 'home' | 'sections' | 'roadmap' | 'pretest' | 'module2' {
   if (hash === '#bagian-belajar') return 'sections'
   if (hash === '#rencana-belajar') return 'roadmap'
   if (hash === '#pretest') return 'pretest'
+  if (hash === '#modul-2') return 'module2'
   return 'home'
+}
+
+function getAuthPageMode(hash: string) {
+  if (hash === '#register') return 'register'
+  if (hash === '#forgot-password') return 'forgot-password'
+  if (hash === '#login' || !hash) return 'login'
+  return null
 }
 
 export default App
